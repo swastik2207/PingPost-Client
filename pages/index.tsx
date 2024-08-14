@@ -1,4 +1,5 @@
 import { Inter } from "next/font/google";
+import { ChangeEvent } from "react";
 import { SlSocialVkontakte } from "react-icons/sl";
 import React, { useCallback, useDebugValue, useEffect, useState } from "react";
 import { IoMdHome } from "react-icons/io";
@@ -18,6 +19,12 @@ import PingpostLayout from "@/components/FeedCard/Layout/PingPostLayout";
 import { Tweet } from "@/gql/graphql";
 import { GetServerSideProps } from "next";
 import { getAllTweetsQuery } from "@/graphql/query/tweet";
+import {app,storage} from "@/firebase";
+import {
+  getDownloadURL,
+  ref,
+  uploadBytesResumable,
+} from "firebase/storage";
 
 
 const inter = Inter({ subsets: ["latin"] });
@@ -31,26 +38,76 @@ export default function Home(props: HomeProps) {
   const { user } = useCurrentUser();
   const { tweets = [] } = getAllTweets();
   const [content, setContent] = useState("");
-
+  const [imageURL,setImageURL]=useState("");
   const { mutate } = useCreateTweet();
   console.log(tweets);
 
   console.log(graphqlClient);
 
+  const createUniqueFileName = (getFile:any) => {
+    const timeStamp = Date.now();
+    const randomStringValue = Math.random().toString(36).substring(2, 12);
+  return `${getFile.name}-${timeStamp}-${randomStringValue}`
+  }
+
+
+  async function helperforUploadingImageToFirebase(file:any){
+    const getFileName=createUniqueFileName(file);
+    const storageReference= ref(storage,`PingPost/${getFileName}`)
+    const uploadImage=uploadBytesResumable(storageReference,file);
+    return new Promise((resolve, reject) => {
+      uploadImage.on(
+        "state_changed",
+        (snapshot) => {},
+        (error) => {
+          console.log(error);
+          reject(error);
+        },
+        () => {
+          getDownloadURL(uploadImage.snapshot.ref)
+            .then((downloadUrl) => resolve(downloadUrl))
+            .catch((error) => reject(error));
+        }
+      );
+    });
+  
+    
+  }
+  
+
   const handlerCreateTweet = useCallback(() => {
     mutate({
       content,
+      imageURL
     });
   }, [content, mutate]);
 
-  const handleSelectImage = useCallback(() => {
+  async function handleImage(){
+
     if (typeof window !== "undefined") {
       const input = document.createElement("input");
       input.setAttribute("type", "file");
-      input.setAttribute("accept", "images/*");
+     
+      
       input.click();
-    }
-  }, []);
+       
+      input.addEventListener("change", async () => {
+        if ( input.files && input.files.length > 0) {
+          const selectedFile = input.files[0]; // Access the first selected file
+          console.log(selectedFile.name); // Logs the file name
+          const extractImageUrl=await helperforUploadingImageToFirebase(selectedFile)
+          console.log(extractImageUrl)
+          setImageURL(extractImageUrl as string);
+        
+        }
+      });
+      
+    
+    } 
+
+
+    
+  }
 
   return (
     <div>
@@ -77,7 +134,7 @@ export default function Home(props: HomeProps) {
                     rows={3}
                   ></textarea>
                   <div className="mt-2 flex justify-between items-center">
-                    <BiImageAlt onClick={handleSelectImage} className="text-xl" />
+                    <BiImageAlt onClick={handleImage} className="text-xl" />
                     <button
                       onClick={handlerCreateTweet}
                       className="bg-[#1d9bf0] font-semibold text-sm py-2 px-4 rounded-full"
